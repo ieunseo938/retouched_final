@@ -470,13 +470,16 @@
                 const maxX = w / 2 - 50;
                 const rangeX = maxX - minX;
 
-                const minY = -h / 2 + 100; // 상단 헤더 여유
-                const maxY = h / 2 - 150;  // 하단 독 여유
+                // [수정] 카드 높이 절반(120px) + 여유분을 고려하여 상하단 여백 추가 확보
+                // 카드가 화면 밖으로 잘리지 않게 함
+                const minY = -h / 2 + 100 + 130; 
+                const maxY = h / 2 - 150 - 130;  
                 const rangeY = maxY - minY;
 
                 cardElements.forEach(c => {
                     const x = minX + Math.random() * rangeX;
-                    const y = minY + Math.random() * rangeY;
+                    // 화면 높이가 충분하지 않을 경우를 대비해 y값 안전하게 처리
+                    const y = (rangeY > 0) ? (minY + Math.random() * rangeY) : 0;
                     const z = (Math.random() - 0.5) * 400;
                     c.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotate(${Math.random()*40-20}deg)`;
                 });
@@ -555,4 +558,5 @@
         });
     </script>
 </body>
+</html>
 </html>
