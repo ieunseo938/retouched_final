@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retouched: Compact</title>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    
+    <!-- MediaPipe Hands (최신 버전 사용) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --header-padding: 30px 40px; 
+            --title-size: 50px; 
+            --desc-size: 13px;  
+            --line-height: 1.6;
+            --box-width: 340px; 
+            --border-style: 1px solid #000;
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #f0f0f0; 
+            overflow: hidden;
+            font-family: 'Pretendard', sans-serif;
+            color: #000;
+        }
+
+        /* [1] 상단 헤더 */
+        .header {
+            position: absolute;
+            top: 0; left: 0; width: 100%;
+            padding: var(--header-padding); 
+            box-sizing: border-box;
+            display: flex;
+            align-items: center; 
+            border-bottom: var(--border-style);
+            background: #ffffff;
+            z-index: 500;
+        }
+
+        .header-title {
+            font-size: var(--title-size);
+            font-weight: 800;
+            white-space: nowrap;
+            margin-right: 30px;
+            padding-right: 30px;
+            height: 100%;
+            display: flex; align-items: center;
+            letter-spacing: -1px;
+        }
+
+        .header-desc {
+            font-size: var(--desc-size);
+            line-height: var(--line-height);
+            font-weight: 400;
+            word-break: keep-all;
+            max-width: 800px;
+            color: #333;
+        }
+        
+        .highlight { font-weight: 400; color: inherit; }
+
+        /* [2] 왼쪽 고정 박스 */
+        .info-box {
+            position: absolute;
+            top: 150px; 
+            left: 10px; 
+            width: var(--box-width);
+            background-color: #ffffff;
+            border: var(--border-style);
+            padding: 15px;
+            box-sizing: border-box;
+            z-index: 500;
+            box-shadow: none;
+        }
+
+        .box-title {
+            font-size: 14px;
+            font-weight: 800;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            color: #000;
+        }
+
+        .info-list {
+            list-style: none;
+            padding: 0; margin: 0;
+            font-size: var(--desc-size);
+            line-height: var(--line-height);
+            color: #444;
+        }
+        .info-list li { margin-bottom: 8px; }
+
+        /* [3] 하단 아이콘 독 - 화면 전체 중앙 하단 배치 */
+        .icon-dock {
+            position: absolute;
+            bottom: 40px;
+            left: 50%; /* 화면 전체 기준 중앙 */
+            transform: translateX(-50%);
+            display: flex;
+            gap: 50px; 
+            z-index: 600;
+            padding: 10px;
+        }
+
+        .icon-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            opacity: 0.7; 
+        }
+
+        /* 아이콘 동그라미 박스 */
+        .icon-image-wrapper {
+            width: 50px; height: 50px;
+            border-radius: 50%; 
+            border: 1px solid #000; 
+            background: #ffffff; 
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .icon-image-wrapper img {
+            width: 24px; height: 24px; 
+            transition: all 0.3s ease;
+        }
+
+        .icon-btn span {
+            font-size: 12px;
+            font-weight: 600;
+            color: #000;
+            letter-spacing: -0.5px;
+        }
+
+        /* 인터랙션 */
+        .icon-dock.has-active .icon-btn:not(.active) {
+            opacity: 0.3; 
+            filter: grayscale(100%);
+            transform: scale(0.9);
+        }
+        
+        .icon-btn.active {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+        
+        .icon-btn.active .icon-image-wrapper {
+            background-color: #000; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        
+        .icon-btn.active .icon-image-wrapper img { 
+            filter: invert(1); 
+        } 
+        
+        .icon-btn.active span { font-weight: 800; }
+
+        .icon-btn:hover {
+            opacity: 1;
+            transform: translateY(-2px);
+        }
+
+        /* [4] 3D Scene */
+        .scene {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            perspective: 2000px;
+            pointer-events: auto; 
+            z-index: 100;
+        }
+        
+        .world {
+            position: absolute;
+            top: 50%; left: 50%; /* 화면 전체 정중앙 */
+            width: 0; height: 0;
+            transform-style: preserve-3d;
+            pointer-events: none; 
+        }
+
+        .card {
+            position: absolute;
+            width: 180px; height: 240px;
+            /* [수정] 중심점 보정: 카드의 중심이 (0,0)에 오도록 마진 조정 */
+            margin-left: -90px; /* width의 절반 */
+            margin-top: -120px; /* height의 절반 */
+            
+            background: transparent; 
+            border-radius: 3px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+            transform-style: preserve-3d;
+            transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+            cursor: pointer;
+            pointer-events: auto; 
+        }
+        .card.hidden { opacity: 0; pointer-events: none; transform: scale(0) !important; }
+
+        .card-inner { 
+            position: relative; width: 100%; height: 100%; 
+            transform-style: preserve-3d; 
+            transition: transform 0.6s; 
+        }
+        .card.flipped .card-inner { transform: rotateY(180deg); }
+
+        .card-front {
+            position: absolute; width: 100%; height: 100%; 
+            backface-visibility: hidden; 
+            background-size: cover; background-position: center;
+            background-color: #fff; 
+            border: 1px solid #ccc; 
+            filter: grayscale(100%) contrast(1.1);
+        }
+        .card.revealed .card-front { filter: none; }
+
+        .card-back {
+            position: absolute; width: 100%; height: 100%; 
+            backface-visibility: hidden; 
+            transform: rotateY(180deg);
+            background: #1a1a1a; color: #fff;
+            display: flex; justify-content: center; align-items: center;
+            border: 1px solid #000;
+        }
+
+        .desc-text { padding: 15px; font-size: 13px; line-height: 1.5; text-align: center; word-break: keep-all; }
+        .scratch-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+
+        .input_video { 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 320px; height: 240px; 
+            opacity: 0; 
+            pointer-events: none; 
+            z-index: -1;
+        }
+        .cam-status { 
+            position: fixed; bottom: 10px; right: 10px; 
+            font-size: 11px; color: #888; 
+            z-index: 1000; 
+            background: rgba(255,255,255,0.8);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <video class="input_video" playsinline autoplay muted></video>
+    <div class="cam-status" id="camStatus">System Initializing...</div>
+
+    <!-- [1] 상단 헤더 -->
+    <header class="header">
+        <div class="header-title">Retouched</div>
+        <div class="header-desc">
+            '포토샵에 의한 죽음'. 디지털 픽셀이 발명되기 훨씬 전부터, 권력은 이미 '포토샵'을 하고 있었다. <br>
+            스탈린의 에어브러시, 마오쩌둥의 덧칠, 그리고 누군가의 얼굴을 긁어낸 날카로운 칼날. <br>
+            기록에서 지워진다는 것은 곧 존재한 적 없는 사람이 된다는 것.<br>
+            이것은 단순한 이미지의 수정이 아니다. 기억에 대한 사형선고다.
+        </div>
+    </header>
+
+    <!-- [2] 왼쪽 고정 박스 -->
+    <aside class="info-box">
+        <div class="box-title">How to use</div>
+        <ul class="info-list">
+            <li>1. 카메라를 향해 주먹을 쥐었다 펼치면 <br> 카드들이 흩어진다.</li>
+            <li>2. 흩어진 카드를 클릭하여 뒤집고, <br> 마우스 드래그로 뒷면을 지우면 설명이 나타난다.</li>
+            <li>3. 카드를 다시 한 번 클릭하면 <br> 지워지거나 대체된 이미지들이 나타난다.</li>
+            <li>4. 아이콘을 클릭하면 <br> 아이콘에 해당되는 이미지만이 남는다.</li>
+        </ul>
+    </aside>
+
+    <!-- [3] 하단 아이콘 독 -->
+    <nav class="icon-dock" id="iconDock">
+        <div class="icon-btn" onclick="filterCards('group4', this)">
+            <div class="icon-image-wrapper">
+                <img src="https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2015.svg" alt="삭제">
+            </div>
+            <span>삭제</span>
+        </div>
+        <div class="icon-btn" onclick="filterCards('group3', this)">
+            <div class="icon-image-wrapper">
+                <img src="https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2013.svg" alt="잔여">
+            </div>
+            <span>잔여</span>
+        </div>
+        <div class="icon-btn" onclick="filterCards('group2', this)">
+            <div class="icon-image-wrapper">
+                <img src="https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2014.svg" alt="합성">
+            </div>
+            <span>합성</span>
+        </div>
+        <div class="icon-btn" onclick="filterCards('group1', this)">
+            <div class="icon-image-wrapper">
+                <img src="https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2016.svg" alt="왜곡">
+            </div>
+            <span>왜곡</span>
+        </div>
+    </nav>
+
+    <!-- [4] 메인 씬 -->
+    <main class="scene">
+        <div class="world" id="world"></div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const cardsData = [
+                { id: 0, group: 'group1', desc: "1994년 타임지, O.J 심슨의 머그샷을 원본보다 검게 왜곡.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%201.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2020.svg" },
+                { id: 1, group: 'group1', desc: "처칠의 건강 이미지를 위해 담배를 지움.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%202.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2021.svg" },
+                { id: 2, group: 'group1', desc: "히틀러는 나약해 보인다고 안경을 지움.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%203.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2022.svg" },
+                { id: 3, group: 'group2', desc: "링컨 유령 사진은 이중 노출 사기극.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%204.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2028.svg" },
+                { id: 4, group: 'group2', desc: "베를린 의사당 깃발, 연기를 그려넣음.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%205.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2027.svg" },
+                { id: 5, group: 'group2', desc: "링컨 얼굴 + 존 칼훈 몸 합성.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%206.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2026.svg" },
+                { id: 6, group: 'group3', desc: "김정일 시찰, 뒤쪽 인물 삭제.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%207.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2018.svg" },
+                { id: 7, group: 'group3', desc: "무솔리니, 말고삐 잡은 마부 삭제.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%208.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2019.svg" },
+                { id: 8, group: 'group3', desc: "클레멘티스는 지웠으나 모자는 남음.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%209.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2017.svg" },
+                { id: 9, group: 'group4', desc: "우주비행사 팀에서 제명된 인물 삭제.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%2010.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2023.svg" },
+                { id: 10, group: 'group4', desc: "레닌 단상 옆 트로츠키 삭제.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%2011.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2024.svg" },
+                { id: 11, group: 'group4', desc: "스탈린과 걷던 예조프가 물결로 대체됨.", fake: "https://raw.githubusercontent.com/ieunseo938/image/20d2f43916559a7ac2369f0724fba32a2b5420e0/Asset%2012.svg", real: "https://raw.githubusercontent.com/ieunseo938/image/5fc79c16eba87e4aebf01642b6c4a2c6c86852a9/Asset%2025.svg" }
+            ];
+
+            const icons = {
+                group1: "https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2016.svg",
+                group2: "https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2014.svg",
+                group3: "https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2013.svg", 
+                group4: "https://raw.githubusercontent.com/ieunseo938/image/34a3561312b38d8b3d3bd83b6f6798e2c6296cfc/Asset%2015.svg"
+            };
+
+            const world = document.getElementById('world');
+            const cardElements = [];
+            let isScattered = false;
+            let currentFilter = null;
+
+            // 스크래치
+            function initScratch(canvas, iconUrl) {
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width; const h = canvas.height;
+                ctx.fillStyle = '#222'; ctx.fillRect(0,0,w,h);
+
+                const img = new Image();
+                img.crossOrigin="Anonymous";
+                img.src = iconUrl;
+                img.onload = () => {
+                    const size=40; const r=img.width/img.height;
+                    let dw=size, dh=size/r;
+                    if(r<1){ dh=size; dw=size*r; }
+                    ctx.globalCompositeOperation='source-over';
+                    ctx.filter='invert(1)';
+                    ctx.drawImage(img, (w-dw)/2, (h-dh)/2, dw, dh);
+                    ctx.filter='none';
+                };
+
+                let d=false;
+                const draw = (e)=>{
+                    if(!d)return;
+                    const r=canvas.getBoundingClientRect();
+                    const cx=e.touches?e.touches[0].clientX:e.clientX;
+                    const cy=e.touches?e.touches[0].clientY:e.clientY;
+                    ctx.globalCompositeOperation='destination-out';
+                    ctx.beginPath(); ctx.arc(cx-r.left, cy-r.top, 20, 0, Math.PI*2); ctx.fill();
+                };
+                ['mousedown','touchstart'].forEach(e=>canvas.addEventListener(e,(ev)=>{ev.stopPropagation();d=true;}));
+                ['mousemove','touchmove'].forEach(e=>canvas.addEventListener(e,(ev)=>{ev.stopPropagation();draw(ev);}));
+                ['mouseup','mouseleave','touchend'].forEach(e=>canvas.addEventListener(e,()=>d=false));
+            }
+
+            // 카드 생성
+            cardsData.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.dataset.group = item.group;
+                
+                const img = new Image();
+                img.src = item.fake;
+                img.onload = () => {
+                    const ratio = img.naturalWidth / img.naturalHeight;
+                    let w = 180; let h = w / ratio; // 카드 크기 약간 축소
+                    card.style.width = w + 'px'; card.style.height = h + 'px';
+                    const cvs = card.querySelector('.scratch-canvas');
+                    cvs.width = w; cvs.height = h;
+                    initScratch(cvs, icons[item.group]);
+                };
+
+                card.innerHTML = `
+                    <div class="card-inner">
+                        <div class="card-front" style="background-image: url('${item.fake}')"></div>
+                        <div class="card-back">
+                            <div class="desc-text">${item.desc}</div>
+                            <canvas class="scratch-canvas"></canvas>
+                        </div>
+                    </div>`;
+                
+                // 초기 위치: 화면 정중앙에 뭉침
+                card.style.transform = `translate3d(0,0,0) rotate(${Math.random()*10-5}deg)`;
+                
+                // 카드 클릭
+                card.addEventListener('click', (e) => {
+                    if(!isScattered) return;
+                    if(e.target.tagName === 'CANVAS') return;
+                    
+                    const flipped = card.classList.contains('flipped');
+                    const revealed = card.classList.contains('revealed');
+
+                    if(!flipped && !revealed) card.classList.add('flipped');
+                    else if(flipped && !revealed) {
+                        card.querySelector('.card-front').style.backgroundImage = `url('${item.real}')`;
+                        card.classList.remove('flipped'); card.classList.add('revealed');
+                    } else if(revealed) {
+                        card.querySelector('.card-front').style.backgroundImage = `url('${item.fake}')`;
+                        card.classList.remove('revealed'); card.classList.add('flipped');
+                    }
+                });
+
+                world.appendChild(card);
+                cardElements.push(card);
+            });
+
+            // 필터링
+            window.filterCards = (group, btn) => {
+                if(event) event.stopPropagation();
+                if(!isScattered) scatter();
+
+                const dock = document.getElementById('iconDock');
+                
+                if(currentFilter === group) {
+                    currentFilter = null;
+                    dock.classList.remove('has-active');
+                    document.querySelectorAll('.icon-btn').forEach(b => b.classList.remove('active'));
+                    cardElements.forEach(c => c.classList.remove('hidden'));
+                } else {
+                    currentFilter = group;
+                    dock.classList.add('has-active');
+                    document.querySelectorAll('.icon-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    cardElements.forEach(c => {
+                        if(c.dataset.group === group) c.classList.remove('hidden');
+                        else {
+                            c.classList.add('hidden'); c.classList.remove('flipped'); c.classList.remove('revealed');
+                        }
+                    });
+                }
+            };
+
+            // 산개 (왼쪽 흰 박스 영역 침범 방지)
+            function scatter() {
+                if(isScattered) return;
+                isScattered = true;
+                
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+
+                // World가 화면 정중앙(0,0)에 위치함
+                // 왼쪽 사이드바 영역(약 420px)을 피해야 함 (박스 너비 340 + 여백 80)
+                // World 기준 왼쪽 끝은 -w/2
+                // 안전 구역 시작점(minX): -w/2 + 420 (왼쪽 박스를 피한 지점)
+                // 안전 구역 끝점(maxX): w/2 - 50 (오른쪽 화면 여백)
+
+                const minX = -w / 2 + 420; 
+                const maxX = w / 2 - 50;
+                const rangeX = maxX - minX;
+
+                const minY = -h / 2 + 100; // 상단 헤더 여유
+                const maxY = h / 2 - 150;  // 하단 독 여유
+                const rangeY = maxY - minY;
+
+                cardElements.forEach(c => {
+                    const x = minX + Math.random() * rangeX;
+                    const y = minY + Math.random() * rangeY;
+                    const z = (Math.random() - 0.5) * 400;
+                    c.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotate(${Math.random()*40-20}deg)`;
+                });
+            }
+
+            function reset() {
+                isScattered = false;
+                currentFilter = null;
+                document.getElementById('iconDock').classList.remove('has-active');
+                document.querySelectorAll('.icon-btn').forEach(b => b.classList.remove('active'));
+                cardElements.forEach(c => {
+                    c.classList.remove('hidden'); c.classList.remove('flipped'); c.classList.remove('revealed');
+                    c.style.transform = `translate3d(0,0,0) rotate(${Math.random()*6-3}deg)`;
+                });
+            }
+
+            // 배경 클릭 시 산개 (이벤트 위임)
+            document.querySelector('.scene').addEventListener('click', (e) => {
+                if(e.target.classList.contains('scene') || e.target.id === 'world') {
+                    if(!isScattered) scatter();
+                }
+            });
+
+            document.addEventListener('dblclick', reset);
+
+            // Hands (최신 CDN 사용 및 오류 처리 강화)
+            if (typeof Hands !== 'undefined') {
+                const v = document.querySelector('.input_video');
+                const s = document.getElementById('camStatus');
+                
+                s.innerText = "Loading Model...";
+
+                // MediaPipe Hands 초기화 (cdn.jsdelivr.net 사용)
+                const h = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }});
+
+                h.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                h.onResults(res => {
+                    s.innerText = "Camera Active"; // 결과가 나오기 시작하면 상태 변경
+                    if(res.multiHandLandmarks.length > 0) {
+                        const l = res.multiHandLandmarks[0];
+                        // 주먹 쥐기 감지 (손목과 중지 끝 거리)
+                        const d = Math.sqrt(Math.pow(l[0].x - l[12].x, 2) + Math.pow(l[0].y - l[12].y, 2));
+                        if(d > 0.25 && !isScattered) scatter(); // 손 펴면 산개
+                        else if(d <= 0.25 && isScattered) reset(); // 주먹 쥐면 리셋
+                    }
+                });
+                
+                const cam = new Camera(v, {
+                    onFrame: async() => { 
+                        if(v.videoWidth && v.videoHeight) {
+                            try {
+                                await h.send({image:v}); 
+                            } catch(err) {
+                                // 무시하거나 로깅
+                            }
+                        }
+                    },
+                    width: 640, height: 480
+                });
+                
+                cam.start()
+                    .then(() => { s.innerText = "Camera Started"; })
+                    .catch(e => {
+                        console.error(e);
+                        s.innerText = "Camera Error: " + e.message;
+                    });
+            }
+        });
+    </script>
+</body>
+</html>
